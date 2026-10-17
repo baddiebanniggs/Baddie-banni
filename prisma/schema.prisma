@@ -1,18 +1,80 @@
-generator client { provider = "prisma-client-js" }
-datasource db { provider = "postgresql"; url = env("DATABASE_URL") }
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
 
 // All money is stored as integer paise (₹1 = 100 paise). Never floats.
 
-enum Role { CUSTOMER STAFF ADMIN }
-enum ProductType { READY_STOCK MADE_TO_ORDER }
-enum ProductStatus { DRAFT ACTIVE ARCHIVED }
-enum OrderStatus { PENDING_PAYMENT PLACED PROCESSING IN_PRODUCTION READY_TO_DISPATCH SHIPPED OUT_FOR_DELIVERY DELIVERED CANCELLATION_REQUESTED CANCELLED RETURN_REQUESTED RETURNED FAILED_DELIVERY }
-enum PaymentStatus { CREATED PENDING SUCCEEDED FAILED REFUNDED PARTIALLY_REFUNDED }
-enum RefundStatus { REQUESTED APPROVED PROCESSING COMPLETED REJECTED FAILED }
-enum DiscountKind { PERCENT FIXED BOGO BUNDLE }
-enum ConsentStatus { SUBSCRIBED UNSUBSCRIBED SUPPRESSED }
-enum NotifChannel { EMAIL WHATSAPP SMS }
-enum NotifStatus { QUEUED ACCEPTED_BY_PROVIDER DELIVERED FAILED }
+enum Role {
+  CUSTOMER
+  STAFF
+  ADMIN
+}
+enum ProductType {
+  READY_STOCK
+  MADE_TO_ORDER
+}
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+enum OrderStatus {
+  PENDING_PAYMENT
+  PLACED
+  PROCESSING
+  IN_PRODUCTION
+  READY_TO_DISPATCH
+  SHIPPED
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLATION_REQUESTED
+  CANCELLED
+  RETURN_REQUESTED
+  RETURNED
+  FAILED_DELIVERY
+}
+enum PaymentStatus {
+  CREATED
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+enum RefundStatus {
+  REQUESTED
+  APPROVED
+  PROCESSING
+  COMPLETED
+  REJECTED
+  FAILED
+}
+enum DiscountKind {
+  PERCENT
+  FIXED
+  BOGO
+  BUNDLE
+}
+enum ConsentStatus {
+  SUBSCRIBED
+  UNSUBSCRIBED
+  SUPPRESSED
+}
+enum NotifChannel {
+  EMAIL
+  WHATSAPP
+  SMS
+}
+enum NotifStatus {
+  QUEUED
+  ACCEPTED_BY_PROVIDER
+  DELIVERED
+  FAILED
+}
 
 model User {
   id String @id @default(cuid())

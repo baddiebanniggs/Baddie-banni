@@ -1,0 +1,19 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: baddie
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
+      POSTGRES_DB: baddie_banni
+    volumes: [dbdata:/var/lib/postgresql/data]
+    restart: unless-stopped
+  web:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://baddie:${DB_PASSWORD}@db:5432/baddie_banni
+    depends_on: [db]
+    ports: ["3000:3000"]
+    restart: unless-stopped
+volumes:
+  dbdata:

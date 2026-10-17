@@ -1,0 +1,338 @@
+generator client { provider = "prisma-client-js" }
+datasource db { provider = "postgresql"; url = env("DATABASE_URL") }
+
+// All money is stored as integer paise (₹1 = 100 paise). Never floats.
+
+enum Role { CUSTOMER STAFF ADMIN }
+enum ProductType { READY_STOCK MADE_TO_ORDER }
+enum ProductStatus { DRAFT ACTIVE ARCHIVED }
+enum OrderStatus { PENDING_PAYMENT PLACED PROCESSING IN_PRODUCTION READY_TO_DISPATCH SHIPPED OUT_FOR_DELIVERY DELIVERED CANCELLATION_REQUESTED CANCELLED RETURN_REQUESTED RETURNED FAILED_DELIVERY }
+enum PaymentStatus { CREATED PENDING SUCCEEDED FAILED REFUNDED PARTIALLY_REFUNDED }
+enum RefundStatus { REQUESTED APPROVED PROCESSING COMPLETED REJECTED FAILED }
+enum DiscountKind { PERCENT FIXED BOGO BUNDLE }
+enum ConsentStatus { SUBSCRIBED UNSUBSCRIBED SUPPRESSED }
+enum NotifChannel { EMAIL WHATSAPP SMS }
+enum NotifStatus { QUEUED ACCEPTED_BY_PROVIDER DELIVERED FAILED }
+
+model User {
+  id String @id @default(cuid())
+  email String @unique
+  passwordHash String?
+  name String?
+  phone String?
+  role Role @default(CUSTOMER)
+  emailVerifiedAt DateTime?
+  createdAt DateTime @default(now())
+  addresses Address[]
+  carts Cart[]
+  orders Order[]
+  wishlist WishlistItem[]
+}
+
+model Address {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fullName String
+  phone String
+  line1 String
+  line2 String?
+  city String
+  state String
+  pincode String // validated as 6 digits in application code
+  isDefault Boolean @default(false)
+  @@index([userId])
+}
+
+model Category {
+  id String @id @default(cuid())
+  slug String @unique
+  name String
+  products Product[]
+}
+
+model Collection {
+  id String @id @default(cuid())
+  slug String @unique
+  name String
+  description String?
+  imageUrl String?
+  featured Boolean @default(false)
+  sortOrder Int @default(0)
+  items CollectionProduct[]
+}
+
+model CollectionProduct {
+  collectionId String
+  productId String
+  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  @@id([collectionId, productId])
+}
+
+model Product {
+  id String @id @default(cuid())
+  slug String @unique
+  title String
+  description String @default("")
+  type ProductType @default(READY_STOCK)
+  status ProductStatus @default(DRAFT) // ARCHIVED hides it but keeps order history
+  categoryId String?
+  category Category? @relation(fields: [categoryId], references: [id])
+  basePrice Int
+  salePrice Int?
+  productionDaysMin Int? // made-to-order estimate only, not a guarantee
+  productionDaysMax Int?
+  seoTitle String?
+  seoDescription String?
+  isPlaceholder Boolean @default(false) // true for seed data
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  variants ProductVariant[]
+  images ProductImage[]
+  collections CollectionProduct[]
+  wishlist WishlistItem[]
+  @@index([status, createdAt])
+}
+
+model ProductVariant {
+  id String @id @default(cuid())
+  productId String
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sku String @unique
+  size String
+  colour String
+  priceOverride Int?
+  stock Int @default(0) // ignored for made-to-order
+  lowStockAt Int @default(3)
+  active Boolean @default(true)
+  @@unique([productId, size, colour])
+}
+
+model ProductImage {
+  id String @id @default(cuid())
+  productId String
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  url String
+  alt String @default("")
+  position Int @default(0)
+  isPlaceholder Boolean @default(false)
+}
+
+model Cart {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  couponCode String?
+  updatedAt DateTime @updatedAt
+  items CartItem[]
+}
+
+model CartItem {
+  id String @id @default(cuid())
+  cartId String
+  cart Cart @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  variantId String
+  quantity Int
+  @@unique([cartId, variantId])
+}
+
+model Order {
+  id String @id @default(cuid())
+  number String @unique
+  userId String
+  user User @relation(fields: [userId], references: [id])
+  status OrderStatus @default(PENDING_PAYMENT)
+  idempotencyKey String @unique // prevents duplicate orders from double submits
+  subtotal Int
+  discountTotal Int
+  shippingTotal Int
+  total Int
+  couponCode String?
+  shippingAddress Json // snapshot
+  createdAt DateTime @default(now())
+  items OrderItem[]
+  events OrderEvent[]
+  payments PaymentTransaction[]
+  refunds Refund[]
+  shipments Shipment[]
+  @@index([userId, createdAt])
+}
+
+// Snapshot of what was bought. Never rewritten when the product changes.
+model OrderItem {
+  id String @id @default(cuid())
+  orderId String
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variantId String?
+  title String
+  sku String
+  size String
+  colour String
+  type ProductType
+  unitPrice Int
+  quantity Int
+}
+
+model OrderEvent {
+  id String @id @default(cuid())
+  orderId String
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fromStatus OrderStatus?
+  toStatus OrderStatus
+  note String?
+  actorId String?
+  createdAt DateTime @default(now())
+}
+
+model PaymentTransaction {
+  id String @id @default(cuid())
+  orderId String
+  order Order @relation(fields: [orderId], references: [id])
+  provider String
+  providerOrderId String?
+  providerPaymentId String?
+  amount Int
+  status PaymentStatus @default(CREATED)
+  createdAt DateTime @default(now())
+  refunds Refund[]
+  @@unique([provider, providerPaymentId])
+}
+
+// Each provider event is processed once: unique (provider, eventId).
+model WebhookEvent {
+  id String @id @default(cuid())
+  provider String
+  eventId String
+  payload Json
+  processedAt DateTime?
+  createdAt DateTime @default(now())
+  @@unique([provider, eventId])
+}
+
+model Refund {
+  id String @id @default(cuid())
+  orderId String
+  order Order @relation(fields: [orderId], references: [id])
+  paymentId String?
+  payment PaymentTransaction? @relation(fields: [paymentId], references: [id])
+  amount Int
+  status RefundStatus @default(REQUESTED)
+  reason String?
+  providerRefundId String? // only COMPLETED once provider (or recorded manual process) confirms
+  createdAt DateTime @default(now())
+}
+
+model Shipment {
+  id String @id @default(cuid())
+  orderId String
+  order Order @relation(fields: [orderId], references: [id])
+  courier String?
+  trackingNumber String?
+  trackingUrl String?
+  events TrackingEvent[]
+}
+
+model TrackingEvent {
+  id String @id @default(cuid())
+  shipmentId String
+  shipment Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  status String
+  occurredAt DateTime
+}
+
+model Discount {
+  id String @id @default(cuid())
+  name String
+  kind DiscountKind
+  code String? @unique // null = automatic promotion
+  value Int // percent (1-100) or paise
+  maxDiscount Int?
+  minOrder Int?
+  startsAt DateTime?
+  endsAt DateTime?
+  usageLimit Int?
+  perCustomerLimit Int?
+  priority Int @default(0)
+  combinable Boolean @default(false)
+  active Boolean @default(true)
+  productIds String[] @default([])
+  excludedProductIds String[] @default([])
+  redemptions DiscountRedemption[]
+}
+
+model DiscountRedemption {
+  id String @id @default(cuid())
+  discountId String
+  discount Discount @relation(fields: [discountId], references: [id])
+  userId String
+  orderId String
+  createdAt DateTime @default(now())
+  @@index([discountId, userId])
+}
+
+model WishlistItem {
+  userId String
+  productId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  @@id([userId, productId])
+}
+
+// Marketing consent is separate from accounts and orders.
+model MarketingSubscription {
+  id String @id @default(cuid())
+  email String @unique
+  status ConsentStatus
+  consentedAt DateTime?
+  consentSource String?
+  unsubscribedAt DateTime?
+  unsubscribeToken String @unique @default(cuid())
+  history ConsentEvent[]
+}
+
+model ConsentEvent {
+  id String @id @default(cuid())
+  subscriptionId String
+  subscription MarketingSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  status ConsentStatus
+  source String
+  createdAt DateTime @default(now())
+}
+
+model NotificationLog {
+  id String @id @default(cuid())
+  dedupeKey String @unique // e.g. "order-confirmation:<orderId>" stops duplicate sends
+  channel NotifChannel @default(EMAIL)
+  recipient String
+  template String
+  status NotifStatus @default(QUEUED)
+  providerMessageId String?
+  error String?
+  createdAt DateTime @default(now())
+}
+
+model StoreSetting {
+  key String @id
+  value Json
+  updatedAt DateTime @updatedAt
+}
+
+model CookieConsent {
+  id String @id @default(cuid())
+  visitorId String @unique
+  analytics Boolean @default(false)
+  marketing Boolean @default(false)
+  updatedAt DateTime @updatedAt
+}
+
+model AuditEvent {
+  id String @id @default(cuid())
+  actorId String
+  action String
+  entity String
+  entityId String?
+  detail Json?
+  createdAt DateTime @default(now())
+  @@index([entity, entityId])
+}
